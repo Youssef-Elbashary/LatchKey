@@ -8,3 +8,5 @@ artifact.html
 .impeccable/
 .vercel/
 node_modules/
+
+.vercel

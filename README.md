@@ -8,7 +8,8 @@ exactly like Mom spends the night trying to get you to break them.
 
 ## Play
 
-- Double-click `index.html` (Chrome, Edge or Firefox). It needs an internet connection the first
+- Online: https://latchkey-sigma.vercel.app
+- Or double-click `index.html` (Chrome, Edge or Firefox). It needs an internet connection the first
   time to fetch three.js and the fonts.
 - Or serve the folder and open http://localhost:8790:
 
@@ -83,9 +84,20 @@ editing:
 node build.js
 ```
 
-This writes `index.html` (play locally) and `artifact.html` (the same page without the document
-wrapper, for publishing). Both embed every clip in `assets/audio/proc/` as base64.
-`assets/audio/ledger.json` maps each clip to its ElevenLabs generation session.
+This writes `index.html` (play locally), `dist/index.html` (what Vercel serves) and `artifact.html`
+(the same page without the document wrapper, for publishing). All of them embed every clip in
+`assets/audio/proc/` as base64. `assets/audio/ledger.json` maps each clip to its ElevenLabs
+generation session.
+
+## Deploy
+
+The Vercel project is connected to this repository: every push to `main` runs `node build.js` on
+Vercel (`vercel.json`) and publishes `dist/` to https://latchkey-sigma.vercel.app. To deploy by
+hand from this folder:
+
+```bash
+vercel deploy --prod
+```
 
 ## Debugging
 
