@@ -8,6 +8,7 @@ const sfx = (name, fallback) => (A.buf[name] ? name : fallback); // the recorded
 
 const DEATHS = {
   chain: ['you let her in.', '1. keep the chain on until the sun is up.'],
+  baby: ['it was never a baby.', '1. keep the chain on until the sun is up.'],
   knocked: ['mom never knocks.', '2. I never knock. I have my key.'],
   look: ['you looked at her face.', '3. if you see her in the hall, close your eyes.'],
   opened: ['you opened your eyes too soon.', "3. don't look at her face. let her pass."],
@@ -41,7 +42,7 @@ function nightState(h) {
 const WINDOWS = { bedWindow: ['bed', V3(4.4, 1.5, -4.1)], livingWindow: ['living', V3(4.4, 1.5, 6.1)], kitchenWindow: ['kitchen', V3(9.3, 1.6, 6.1)] };
 
 const Story = {
-  chapter: 0, run: 0, waits: [], flags: {}, t0: 0, dying: null, peepLocked: false, handShow: 0, baseFear: 0.05, sounds: [], hold: null, litMask: null,
+  chapter: 0, run: 0, waits: [], flags: {}, t0: 0, dying: null, peepLocked: false, handShow: 0, baseFear: 0.05, sounds: [], hold: null, litMask: null, nextDread: 30, dreadDone: {},
 
   init() {
     // Mom's long fingers on your shoulder (4:12)
@@ -123,7 +124,7 @@ const Story = {
     for (const w of this.waits) w.rej(new Abort());
     this.waits = []; this.dying = null; this.hold = null;
     this.stopSounds(0.05);
-    this.chapter = i; this.flags = {}; this.t0 = G.time; this.baseFear = 0.05; this.peepLocked = false; this.handShow = 0; this.mirrorArmed = false;
+    this.chapter = i; this.flags = {}; this.t0 = G.time; this.baseFear = 0.05; this.peepLocked = false; this.handShow = 0; this.mirrorArmed = false; this.nextDread = rand(22, 40);
     const C = CHAPTERS[i];
     W.reset(); Stalker.hide(); Stalker.tilt = 0.45; Stalker.data = {}; Stalker.setMask(false);
     A.stopMusicBox(false); A.stopRing(); A.stopDial(); A.stopRiser(); A.birds = false; A.setTension(0.1); A.breathSuppressed = false;
@@ -186,6 +187,7 @@ const Story = {
     // chapter rules
     const tick = this['tick' + this.chapter];
     if (tick) tick.call(this, dt);
+    if (G.state === 'play') this.dread(dt);
     // shoulder hand
     const h = this.shoulderHand;
     h.position.y = damp(h.position.y, this.handShow ? -0.215 : -0.7, 5, dt); h.visible = h.position.y > -0.66;
@@ -356,7 +358,7 @@ const Story = {
     try {
       if (this.chapter < 1) { A.startDial(); await this.wait(2.2); A.stopDial(); this.think('dial tone.'); }
       else {
-        const s = this.keep(A.play('staticLoop', { loop: true, gain: 0.05, pan: -0.55, reverb: 0 }));
+        const s = this.keep(A.play('staticLoop', { loop: true, gain: 0.014, pan: -0.55, reverb: 0 }));
         await this.wait(1.2);
         A.play(sfx('sfx_breath', 'gIn'), { pan: -0.55, gain: 0.55, muffle: 3000, reverb: 0 });
         await this.wait(2.2);
@@ -378,7 +380,7 @@ const Story = {
     W.setHandset(false); A.play('clack', { pos: W.anchors.phone, gain: 0.5 });
     P.setMode('phone', { center: P.yaw, range: 0.9, pitch: 0.6 });
     UI.objective(null);
-    this.keep(A.play('staticLoop', { loop: true, gain: 0.05, pan: -0.55, reverb: 0 }));
+    this.keep(A.play('staticLoop', { loop: true, gain: 0.014, pan: -0.55, reverb: 0 }));
     await this.wait(1.3);
     A.play(sfx('sfx_breath', 'gIn'), { pan: -0.55, gain: 0.7, muffle: 3200, reverb: 0 });
     await this.wait(2.0);
@@ -394,6 +396,7 @@ const Story = {
     G.camera.fov = 112; G.camera.updateProjectionMatrix(); G.camera.layers.enable(LAYER_OUTSIDE);
     Post.peep = 1; A.play('rustle', { gain: 0.25 }); A.play('creakFloor', { gain: 0.15, pos: _v1.set(0.4, 0, 0) });
     UI.hint('<span><kbd>E</kbd>step down</span>', 3);
+    if (this.flags.baby) this.flags.babyPeeked = true; // the corridor is empty. the crying is right against the door
     if (this.flags.knocking && !this.flags.peepScared) this.peepScare().catch(() => {});
     else if (this.chapter >= 4 && this.chapter <= 8 && !this.flags.peepSeen) { // far down the building corridor, she's waiting
       this.flags.peepSeen = true; Stalker.show('idle'); Stalker.place(-8.4, 0, Math.PI / 2); Stalker.look = V3(0, 0, 0); Stalker.tilt = 0.7;
@@ -449,12 +452,50 @@ const Story = {
     } finally { f.tapRunning = false; }
   },
 
+  // 3:17, when knocking hasn't worked: a baby starts crying out in the building corridor.
+  // There is no baby on our floor. It is one more way to get the chain off the door.
+  async babyLure() {
+    const S = this, f = S.flags;
+    if (!A.buf.sfx_baby) return;
+    const far = V3(-7.5, 0.5, 0.2), door = V3(-0.1, 0.3, 0.05); // the far end of the corridor, then right against our door, at floor height
+    const h = S.keep(A.play('sfx_baby', { loop: true, pos: far, gain: 0, muffle: 1500, reverb: 0.55, ref: 1.6, roll: 1 }));
+    if (!h) return;
+    f.baby = true; S.baseFear = 0.28; A.setTension(0.3); W.setUnderDoor(1, 0);
+    h.setGain(0.9, 1.2);
+    await S.wait(3.5);
+    UI.thought('...a baby?', 3);
+    await S.wait(4.5);
+    UI.thought("there's no baby on our floor.", 4);
+    // it comes up the corridor, slowly, the whole way to our door
+    const t = A.ctx.currentTime, pz = h.panner;
+    if (pz && pz.positionX) for (const [ax, a, b] of [['X', far.x, door.x], ['Y', far.y, door.y], ['Z', far.z, door.z]]) { pz['position' + ax].setValueAtTime(a, t); pz['position' + ax].linearRampToValueAtTime(b, t + 10); }
+    else h.setPos(door);
+    await S.until(() => f.babyPeeked, 11);
+    if (f.babyPeeked) { // it knows you're looking: the crying stops dead, and the corridor is empty
+      h.stop(0.02); A.hush(5, 0.02);
+      await S.until(() => P.mode !== 'peephole', 6);
+      await S.wait(1.2);
+    } else { // it can't hold the voice any longer: the cry slows and sinks into something that was never a baby
+      const t2 = A.ctx.currentTime; h.src.playbackRate.setValueAtTime(1, t2); h.src.playbackRate.linearRampToValueAtTime(0.42, t2 + 2.6);
+      await S.wait(2.4);
+      h.stop(0.06); A.hush(5, 0.02);
+      await S.wait(1.4);
+    }
+    // the light under the door: two feet, where the baby was
+    W.setUnderDoor(1, 1);
+    await S.say('e_room_laugh', { style: 'door', pos: V3(-0.1, 0.35, 0), who: '', gain: 1.15 });
+    await S.wait(1.2);
+    UI.thought('it wants me to open the door.', 4);
+    W.setUnderDoor(1, 0); f.baby = false; S.baseFear = 0.15; A.setTension(0.15);
+    await S.wait(3);
+  },
+
   // ----- the chain ---------------------------------------------------------------------
   chainOff() {
     const ch = this.chapter, f = this.flags;
     if (ch === 10 && f.realMom) { this.ending(); return; }
     if (ch === 10 && f.fakeMom) { this.kill('knocked', { door: true }); return; }
-    if (ch === 2 && f.knocking) { this.kill('chain', { door: true }); return; }
+    if (ch === 2 && (f.knocking || f.baby)) { this.kill(f.baby ? 'baby' : 'chain', { door: true }); return; }
     A.play('chain', { pos: W.chain.anchor, gain: 0.3 });
     this.think(ch === 10 && W.sunT > 0 ? 'not yet. wait for mom.' : "mom said keep it on until the sun's up.");
   },
@@ -694,9 +735,11 @@ const CHAPTERS = [
       await S.wait(2.5);
       UI.objective('find the matches (kitchen drawer)');
       await S.until(() => f.gotMatches, 45);
-      // the phone rings while you light them
+      // the phone rings while you light them. Out of dead silence, and every ring a little more wrong
       await S.until(() => W.litCount() >= 1, 10);
-      A.startRing(W.anchors.phone); f.ringing = true; S.baseFear = 0.25; A.setTension(0.3);
+      A.hush(2.5, 0.03);
+      await S.wait(1.6);
+      A.startRing(W.anchors.phone, { wrong: 0.12, grow: 0.24 }); f.ringing = true; S.baseFear = 0.25; A.setTension(0.3);
       await S.wait(2.2);
       UI.thought('...mom again?', 3);
       await S.wait(4);
@@ -710,7 +753,7 @@ const CHAPTERS = [
       await S.say('m_machine', { style: 'machine', pos: mach, who: 'THE ANSWERING MACHINE', gap: 0.25 });
       A.play('mwBeep', { pos: mach, gain: 0.6, rate: 0.55 });
       await S.wait(1.4);
-      S.keep(A.play('staticLoop', { loop: true, pos: mach, gain: 0.06, reverb: 0.1 }));
+      S.keep(A.play('staticLoop', { loop: true, pos: mach, gain: 0.018, reverb: 0.1 }));
       await S.wait(2.4);
       A.play(sfx('sfx_breath', 'gIn'), { pos: mach, gain: 0.8, muffle: 2800 });
       await S.wait(2.6);
@@ -728,9 +771,11 @@ const CHAPTERS = [
       UI.objective(null);
       S.litMask = W.candles.map(c => c.lit); // the rest of the night keeps the ones you lit
       await S.wait(2.5);
-      // one more ring. just the one.
-      const b = A.play('bell', { pos: W.anchors.phone, gain: 0.55, reverb: 0.3, ref: 1.2 });
-      await S.wait(0.7); b && b.stop(0.05);
+      // one more ring. just the one, low and slow, cut off halfway, as if a hand closed over the bell
+      A.hush(3, 0.02);
+      await S.wait(1.2);
+      const bell = A.ringBurst(W.anchors.phone, 0.75, 1);
+      await S.wait(0.55); bell.forEach(h => h && h.stop(0.02));
       await S.wait(6);
     },
   },
@@ -778,7 +823,11 @@ const CHAPTERS = [
       // nails, slowly, from the top of the door to the bottom
       A.play(sfx('sfx_scratch', 'scratch'), { pos: _v1.set(-0.05, 1.7, 0), gain: 0.9, rate: 0.6, reverb: 0.4 });
       await S.wait(5);
-      f.knocking = false; f.knockDone = true; S.baseFear = 0.15;
+      f.knocking = false; S.baseFear = 0.15;
+      // knocking didn't work. so she tries something else
+      await S.wait(4);
+      await S.babyLure();
+      f.knockDone = true;
       if (f.lock_kitchen) { // you already checked it: she taps on the glass from wherever you are
         A.hush(3);
         await S.wait(1.2);
@@ -1302,13 +1351,47 @@ const CHAPTERS = [
 // mouth-at-your-ear position behind the player
 Story.earBehind = function () { const b = _v3.copy(P.moveDir).multiplyScalar(-0.35); return V3(P.pos.x + b.x, 1.25, P.pos.z + b.z); };
 
+// between the scripted scares the flat is never quite empty: rare sounds with nothing making them,
+// more of them as the night goes on. Never on top of her, a voice, the phone or a scripted beat.
+Story.dread = function (dt) {
+  const ch = this.chapter, f = this.flags, D = this.dreadDone;
+  if (ch < 1 || f.knocked || this.dying || P.mode !== 'free') return;
+  if ((this.nextDread -= dt) > 0) return;
+  const ll = A.lastLine, now = A.ctx ? A.ctx.currentTime : 0;
+  if (Stalker.group.visible || this.baseFear >= 0.28 || this.peepLocked || A.ring || (ll && now < ll.at + ll.dur + 2)) { this.nextDread = 4; return; }
+  this.nextDread = Math.max(16, rand(40, 75) - ch * 2.5);
+  const pool = [];
+  if (ch <= 6 && A.buf.sfx_upstairs) pool.push('upstairs', 'upstairs');
+  if (ch <= 4 && A.buf.sfx_dog && !D.dog) pool.push('dog');
+  if (ch >= 2) pool.push('bell');
+  if (ch >= 3) pool.push('wall');
+  if (ch >= 5 && A.vbuf.e_name) pool.push('whisper');
+  if (ch >= 6 && !P.flashOn) pool.push('breath', 'breath');
+  if (!pool.length) return;
+  const e = pick(pool), p = P.pos;
+  if (e === 'upstairs') { // someone walking across the flat above
+    A.play('sfx_upstairs', { pos: V3(p.x + rand(-2.5, 2.5), H + 0.5, p.z + rand(-2, 2)), gain: 0.6, muffle: 650, reverb: 0.25, ref: 1.6, roll: 0.8, rate: rand(0.86, 0.98) });
+    if (!D.upstairs) this.wait(8).then(() => { if (!D.upstairs) { D.upstairs = true; this.think('...nobody lives upstairs. not since the fire.'); } }).catch(() => {});
+  } else if (e === 'dog') { // a dog somewhere down the street. Then it stops
+    D.dog = true;
+    A.play('sfx_dog', { pos: V3(rand(0, 10), 2, 24), gain: 0.9, muffle: 2400, reverb: 0.45, ref: 5, roll: 0.5, bus: 'amb' });
+  } else if (e === 'bell') A.bellTap(W.anchors.phone); // one strike of the phone bell, as if something brushed it
+  else if (e === 'wall') { // three slow knocks from inside the wall beside you
+    const side = Math.random() < 0.5 ? 1 : -1, d = P.moveDir;
+    this.knockAt(V3(p.x - d.z * side * 1.2, rand(0.8, 1.6), p.z + d.x * side * 1.2), 1, 0.45, 1, 700);
+  } else if (e === 'whisper') { // your name, from the emptiest room in the flat
+    const rooms = [W.anchors.momBed, W.anchors.tub, V3(1.3, 1.1, -1.1)].sort((a, b) => b.distanceTo(p) - a.distanceTo(p));
+    A.line('e_name', { style: 'room', pos: rooms[0], muffle: 1100, gain: 0.32, length: 1.15 });
+  } else A.play(sfx('sfx_breath', 'gIn'), { pos: this.earBehind(), gain: 0.32, ref: 0.4, reverb: 0.04 }); // in the dark, right behind you
+};
+
 // Mom's first call (3:00)
 Story.momCall = async function () {
   const S = this; S.flags.onPhone = true;
   A.stopRing(); W.setHandset(false); A.play('clack', { pos: W.anchors.phone, gain: 0.5 });
   P.setMode('phone', { center: P.yaw, range: 1.0, pitch: 0.6 });
   UI.objective(null);
-  const hiss = S.keep(A.play('staticLoop', { loop: true, gain: 0.035, pan: -0.55, reverb: 0 }));
+  const hiss = S.keep(A.play('staticLoop', { loop: true, gain: 0.01, pan: -0.55, reverb: 0 }));
   await S.wait(0.9);
   const gaps = [0.45, 0.35, 0.45, 0.45, 0.6, 0.6, 0.5, 0.2];
   for (let i = 0; i < 8; i++) await S.say('m_call' + (i + 1), { style: 'phone', who: 'MOM · ON THE PHONE', gap: gaps[i] });

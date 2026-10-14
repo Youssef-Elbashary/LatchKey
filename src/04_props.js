@@ -734,6 +734,7 @@ function buildWorld(scene) {
     .concat(W.props.showerCurtain, W.curtains.map(c => c.mesh)); // cloth the beam can't pass through
   W.anchors.windows = [V3(4.4, 1.5, -4.2), V3(4.4, 1.5, 6.2), V3(9.3, 1.6, 6.2)];
   W.anchors.street = V3(6, 0, 16);
+  W.anchors.fridge = V3(8.1, 0.35, 0.95); // the compressor, low at the back
   W.anchors.frontOut = V3(-0.35, 1.5, 0);
   W.anchors.frontIn = V3(0.25, 1.4, 0);
   W.anchors.momDoor = V3(10.9, 1.4, 0);
@@ -853,7 +854,7 @@ W.setChain = function (on) { this.chainOn = on; };
 W.lightningNow = function (strength = 1, thunderDelay = 1.2) {
   const s = Settings.reduceFlashing ? Math.min(strength, 0.35) : strength;
   this.lightning.seq = Settings.reduceFlashing ? [[0, s * 0.6], [0.25, s], [0.6, 0]] : [[0, s], [0.06, s * 0.15], [0.11, s * 0.85], [0.2, s * 0.3], [0.28, s * 0.6], [0.45, 0]];
-  this.lightning.t0 = G.time; this.lightning.t = rand(14, 32);
+  this.lightning.t0 = G.time; this.lightning.t = rand(30, 70); // rare: the storm is moving off, the flat is quiet
   A.thunder(strength > 0.8 ? 0.8 : 0.4, thunderDelay);
 };
 W.sunrise = function () { this.sky = 'sunrise'; this.sunT = 0.0001; };

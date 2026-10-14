@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
-// audio: every sound is synthesized. Offline recipes render AudioBuffers once;
-// continuous layers (drones, voices, music box, rain) run as live node graphs.
+// audio: recorded clips (voices, the phone bell, rain, the fridge, the house) plus
+// synthesized recipes rendered once into AudioBuffers; drones and the music box run live.
 // ---------------------------------------------------------------------------
 const white = () => Math.random() * 2 - 1;
 
@@ -179,13 +179,13 @@ const RECIPES = {
     }
   },
   breath: kind => (d, sr) => {
-    const dur = d.length / sr, inhale = kind.startsWith('in') || kind === 'gasp', f1 = inhale ? 1500 : 950;
-    const b1 = BQ('bp', f1, 0.9, sr), b2 = BQ('bp', f1 * 1.9, 1.3, sr), hp = BQ('hp', 300, 0.7, sr);
+    const dur = d.length / sr, inhale = kind.startsWith('in') || kind === 'gasp', f1 = inhale ? 1150 : 760; // warm, breathy, not hissy
+    const b1 = BQ('bp', f1, 0.9, sr), b2 = BQ('bp', f1 * 1.7, 1.3, sr), hp = BQ('hp', 220, 0.7, sr);
     for (let i = 0; i < d.length; i++) {
       const t = i / sr, u = t / dur;
       let env = kind === 'gasp' ? smooth(0, 0.12, u) * smooth(1, 0.35, u) : inhale ? Math.pow(Math.sin(Math.PI * u), 1.5) : smooth(0, 0.12, u) * Math.pow(1 - u, 1.4);
       if (kind.endsWith('Shaky')) env *= 0.72 + 0.28 * Math.sin(t * TAU * 9 + Math.sin(t * 31) * 2);
-      if (i % 64 === 0) { const s = inhale ? lerp(0.85, 1.15, u) : lerp(1.05, 0.9, u); b1.set(f1 * s, 0.9); b2.set(f1 * 1.9 * s, 1.3); }
+      if (i % 64 === 0) { const s = inhale ? lerp(0.85, 1.15, u) : lerp(1.05, 0.9, u); b1.set(f1 * s, 0.9); b2.set(f1 * 1.7 * s, 1.3); }
       const n = white();
       let v = (b1(n) + b2(n) * 0.45) * env;
       if (kind === 'gasp') v += Math.sin(TAU * 330 * t) * env * 0.12 * smooth(0.4, 0, u);
@@ -247,8 +247,8 @@ const RECIPES = {
     const lp = BQ('lp', 220, 0.8, sr); let ph = 0;
     for (let i = 0; i < d.length; i++) { const t = i / sr; ph += TAU * (28 + 50 * Math.exp(-t / 0.4)) / sr; d[i] = Math.sin(ph) * smooth(0, 0.02, t) * Math.exp(-t / 0.9) + lp(white()) * Math.exp(-t / 0.25) * 0.6; }
   },
-  static: () => (d, sr) => {
-    const bp = BQ('bp', 3500, 0.5, sr), dur = d.length / sr; let p = 0;
+  static: (f = 3500) => (d, sr) => {
+    const bp = BQ('bp', f, 0.5, sr), dur = d.length / sr; let p = 0;
     for (let i = 0; i < d.length; i++) { const t = i / sr; p += TAU * 60 / sr; d[i] = (bp(white()) * (0.7 + 0.3 * Math.random()) + Math.sin(p) * 0.08) * smooth(0, 0.01, t) * smooth(dur, dur - 0.05, t); }
   },
   beep: (f, dur = 0.06) => (d, sr) => {
@@ -540,7 +540,7 @@ const A = {
     B.crack = many(3, 0.25, () => R.crack());
     B.shriek = mk(2.2, R.shriek());
     B.stingHard = mk(1.8, R.stingHard()); B.stingSoft = mk(4.5, R.stingSoft()); B.whoomp = mk(2.6, R.whoomp());
-    B.static = mk(0.6, R.static()); B.staticLoop = mk(2, R.static(), { loop: true });
+    B.static = mk(0.6, R.static()); B.staticLoop = mk(2, R.static(1400), { loop: true }); // the TV hisses; a phone line only murmurs
     B.chirp = mk(0.07, R.beep(3200, 0.06)); B.alarm = mk(0.09, R.beep(2400, 0.08)); B.mwBeep = mk(0.26, R.beep(1900, 0.25));
     B.curtain = mk(0.8, R.curtain()); B.drawer = mk(0.9, R.drawer()); B.paper = mk(0.6, R.paper()); B.rustle = many(2, 0.6, () => R.rustle());
     B.sniff = mk(0.62, R.sniff()); B.scratch = mk(1.7, R.scratch());
@@ -569,8 +569,20 @@ const A = {
       if (id.startsWith('sfx_')) this.buf[id] = normalizeBuffer(b, 0.16, 0.95);
       else this.vbuf[id] = normalizeBuffer(b, 0.13, 0.97);
     }
+    for (const id of ['sfx_rain', 'sfx_fridge', 'sfx_baby']) if (this.buf[id]) this.buf[id] = this.makeLoop(this.buf[id], id === 'sfx_rain' ? 1.2 : 0.6);
     this.prepareEvil();
     return n;
+  },
+  // a recorded loop made seamless: its tail crossfades into its head (this also hides the mp3 padding)
+  makeLoop(b, xf = 0.8) {
+    const sr = b.sampleRate, L = b.length, m = Math.min(Math.floor(xf * sr), L >> 2), n = L - m;
+    const out = this.ctx.createBuffer(b.numberOfChannels, n, sr);
+    for (let ch = 0; ch < b.numberOfChannels; ch++) {
+      const s = b.getChannelData(ch), d = out.getChannelData(ch);
+      for (let j = 0; j < n - m; j++) d[j] = s[m + j];
+      for (let k = 0; k < m; k++) { const u = k / m * Math.PI / 2; d[n - m + k] = s[L - m + k] * Math.cos(u) + s[k] * Math.sin(u); }
+    }
+    return out;
   },
   // the pitched-down layers and reversed swells are rendered in the background
   prepareEvil() {
@@ -675,6 +687,7 @@ const A = {
   hush(seconds = 1.5, level = 0.12) {
     if (!this.ready) return;
     const t = this.ctx.currentTime;
+    this.hushUntil = t + 0.3 + seconds; // the clock holds its breath too
     for (const k of ['amb', 'music']) {
       const g = this.bus[k].gain, base = this.busBase[k];
       g.cancelScheduledValues(t); g.setValueAtTime(g.value, t);
@@ -717,7 +730,11 @@ const A = {
     node.connect(this.bus[o.bus || 'sfx']);
     const rv = o.reverb ?? 0.22;
     if (rv > 0) { const s = ctx.createGain(); s.gain.value = rv; node.connect(s); s.connect(this.reverbIn); }
-    src.start(ctx.currentTime + (o.when || 0), o.offset || 0);
+    const t0 = ctx.currentTime + (o.when || 0);
+    src.start(t0, o.offset || 0);
+    if (o.dur) { // play only a slice, with a short release instead of a click
+      g.gain.setValueAtTime(o.gain ?? 1, t0 + Math.max(0, o.dur - 0.04)); g.gain.linearRampToValueAtTime(0, t0 + o.dur); src.stop(t0 + o.dur + 0.02);
+    }
     return {
       src, gain: g, panner,
       stop: (fade = 0.05) => {
@@ -744,17 +761,18 @@ const A = {
   // ----- ambience -----------------------------------------------------------
   startAmbience() {
     if (!this.ready || this.loops.rain) return;
-    const ctx = this.ctx;
-    this.loops.rain = this.play('rain', { loop: true, gain: 0.0, bus: 'amb', reverb: 0 });
-    this.loops.rain.setGain(0.2, 2);
-    this.loops.glass = (this.anchors.windows || []).map(p => { const h = this.play('rainGlass', { loop: true, gain: 0, pos: p, bus: 'amb', reverb: 0.1, roll: 1.6, offset: Math.random() * 2 }); h.setGain(0.26, 2); return h; });
-    // wind: noise through a slowly wandering bandpass
-    const src = ctx.createBufferSource(); src.buffer = this.buf.white; src.loop = true;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 320; bp.Q.value = 1.2;
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.06; const lg = ctx.createGain(); lg.gain.value = 120; lfo.connect(lg); lg.connect(bp.frequency);
-    const g = ctx.createGain(); g.gain.value = 0.04;
-    src.connect(bp); bp.connect(g); g.connect(this.bus.amb); src.start(); lfo.start();
-    this.loops.wind = { gain: g, src, lfo };
+    const ctx = this.ctx, rec = !!this.buf.sfx_rain;
+    // rain: a dark murmur through the walls, and the real thing only when you stand at a window.
+    // (no hiss anywhere: a constant bright noise floor reads as static and eats the silence)
+    this.loops.rain = this.play(rec ? 'sfx_rain' : 'rain', { loop: true, gain: 0, bus: 'amb', reverb: 0, muffle: rec ? 1000 : 700, offset: Math.random() * 10 });
+    this.loops.glass = (this.anchors.windows || []).map(p => this.play(rec ? 'sfx_rain' : 'rainGlass', { loop: true, gain: 0, pos: p, bus: 'amb', reverb: 0.05, ref: 0.6, roll: 2.4, muffle: rec ? 3600 : 2000, offset: Math.random() * 15 }));
+    this.setRain(this.rainLevel ?? 1, 2);
+    // the fridge: the only machine still running. It hums, and now and then it stops
+    if (this.buf.sfx_fridge && this.anchors.fridge) {
+      this.loops.fridge = this.play('sfx_fridge', { loop: true, gain: 0, pos: this.anchors.fridge, bus: 'amb', reverb: 0.04, ref: 0.7, roll: 1.5, offset: Math.random() * 8 });
+      this.fridgeOn = false; this.nextFridge = rand(1, 4);
+    }
+    this.nextGust = rand(12, 30);
     // score: low drone + high cluster driven by tension
     const dr = ctx.createGain(); dr.gain.value = 0; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 150; lp.Q.value = 1.4;
     const lfo2 = ctx.createOscillator(); lfo2.frequency.value = 0.05; const l2 = ctx.createGain(); l2.gain.value = 50; lfo2.connect(l2); l2.connect(lp.frequency); lfo2.start();
@@ -766,16 +784,29 @@ const A = {
     this.loops.drone = dr; this.loops.hi = hi;
   },
   setRain(level, tc = 2) {
+    this.rainLevel = level;
     if (!this.loops.rain) return;
-    this.loops.rain.setGain(0.2 * level, tc);
-    for (const h of this.loops.glass) h.setGain(0.26 * level, tc);
+    const rec = !!this.buf.sfx_rain;
+    this.loops.rain.setGain((rec ? 0.11 : 0.05) * level, tc);
+    for (const h of this.loops.glass) h.setGain((rec ? 0.45 : 0.1) * level, tc);
   },
   setTension(v) { this.tensionTarget = v; },
 
+  // far-off thunder: a long low roll, never a crack (nearer strikes are louder, brighter and quicker)
   thunder(close = 0.5, delay = 0) {
+    const w = this.anchors.windows?.[0], pos = w ? V3(w.x, w.y, w.z + 6) : null;
+    if (this.buf.sfx_thunder) return this.play('sfx_thunder', { gain: 0.3 + close * 0.5, rate: rand(0.78, 0.9) + close * 0.14, muffle: 450 + close * 900, pos, ref: 6, roll: 0.5, bus: 'amb', reverb: 0.4, when: delay });
     const b = this.buf.thunder[close > 0.6 ? 0 : close < 0.35 ? 1 : 2];
-    const w = this.anchors.windows?.[0];
-    return this.play(b, { gain: 0.45 + close * 0.5, pos: w ? V3(w.x, w.y, w.z + 6) : null, ref: 6, roll: 0.5, bus: 'amb', reverb: 0.5, when: delay });
+    return this.play(b, { gain: 0.45 + close * 0.5, pos, ref: 6, roll: 0.5, bus: 'amb', reverb: 0.5, when: delay, muffle: 900 });
+  },
+  // a gust leans on the building: a slow swell of low air, then nothing
+  gust() {
+    const ctx = this.ctx, t = ctx.currentTime, d = rand(5, 9);
+    const src = ctx.createBufferSource(); src.buffer = this.buf.white; src.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.3;
+    bp.frequency.setValueAtTime(170, t); bp.frequency.linearRampToValueAtTime(rand(280, 380), t + d * 0.5); bp.frequency.linearRampToValueAtTime(150, t + d);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(rand(0.05, 0.09) * (this.rainLevel ?? 1), t + d * 0.45); g.gain.linearRampToValueAtTime(0, t + d);
+    src.connect(bp); bp.connect(g); g.connect(this.bus.amb); src.start(t, Math.random()); src.stop(t + d + 0.1);
   },
 
   // ----- music box ------------------------------------------------------------
@@ -895,11 +926,27 @@ const A = {
   },
 
   // ----- simple continuous emitters ---------------------------------------
-  startRing(pos) {
+  // the phone: a real bell, two seconds of ringing and four of silence. wrong (0..1) bends it, and grow
+  // bends it further every ring: slower and lower, an octave-down shadow under it, more room, shorter silences
+  startRing(pos, { wrong = 0, grow = 0 } = {}) {
     this.stopRing();
-    this.ring = { pos, next: this.ctx ? this.ctx.currentTime + 0.1 : 0, h: [] };
+    this.ring = { pos, next: this.ctx ? this.ctx.currentTime + 0.1 : 0, h: [], n: 0, wrong, grow };
   },
-  stopRing() { if (this.ring) { this.ring.h.forEach(h => h.stop(0.03)); this.ring = null; } },
+  stopRing(fade = 0.03) { if (this.ring) { this.ring.h.forEach(h => h && h.stop(fade)); this.ring = null; } },
+  ringBurst(pos, wrong = 0, slices = 2) {
+    if (!this.ready) return [];
+    if (!this.buf.sfx_ring) return [this.play('bell', { pos, gain: 0.55, reverb: 0.3, ref: 1.2 })];
+    const rate = 1 - wrong * 0.16, len = 0.98 / rate, hs = [];
+    for (let k = 0; k < slices; k++) { // the hammer part of the take, back to back; only the last one rings out
+      const last = k === slices - 1;
+      // loud on purpose: a real bell in a silent flat goes right through you
+      hs.push(this.play('sfx_ring', { pos, gain: 1.9, rate: rate * (k % 2 ? 0.997 : 1), reverb: 0.28 + wrong * 0.45, ref: 1.3, when: k * len, offset: k ? 0.04 : 0, dur: last ? 0 : len + 0.03 }));
+    }
+    if (wrong > 0.3) hs.push(this.play('sfx_ring', { pos, gain: 0.9 * wrong, rate: rate * 0.5, reverb: 0.7, ref: 1.3, muffle: 2400 })); // something rings with it, an octave under
+    return hs;
+  },
+  // one strike of the bell, as if something brushed the phone in the dark
+  bellTap(pos) { return this.play(this.buf.sfx_ring ? 'sfx_ring' : 'bell', { pos, gain: 0.8, rate: 0.94, reverb: 0.6, ref: 1.3, dur: 0.09 }); },
   startDial() { if (!this.ready || this.dial) return; const ctx = this.ctx, g = ctx.createGain(); g.gain.value = 0.05; const p = ctx.createStereoPanner(); p.pan.value = -0.55; const oscs = [350, 440].map(f => { const o = ctx.createOscillator(); o.frequency.value = f; o.connect(g); o.start(); return o; }); g.connect(p); p.connect(this.bus.sfx); this.dial = { g, oscs }; },
   stopDial() { if (!this.dial) return; const t = this.ctx.currentTime; this.dial.g.gain.setTargetAtTime(0, t, 0.02); this.dial.oscs.forEach(o => o.stop(t + 0.2)); this.dial = null; },
   setBuzz(level, pos) {
@@ -911,7 +958,7 @@ const A = {
       o.connect(bp); bp.connect(g); g.connect(p); p.connect(this.bus.sfx); o.start();
       this.buzz = { o, g };
     }
-    if (this.buzz) this.buzz.g.gain.setTargetAtTime(level * 0.09, this.ctx.currentTime, 0.02);
+    if (this.buzz) this.buzz.g.gain.setTargetAtTime(level * 0.035, this.ctx.currentTime, 0.02);
   },
   startRiser() {
     if (!this.ready || this.riser) return;
@@ -928,7 +975,8 @@ const A = {
     const ctx = this.ctx, now = ctx.currentTime, P = ctxInfo.player;
     // tension score
     this.tension = damp(this.tension, this.tensionTarget, 0.6, dt);
-    if (this.loops.drone) { this.loops.drone.gain.setTargetAtTime(0.018 + this.tension * 0.12, now, 0.3); this.loops.hi.gain.setTargetAtTime(Math.pow(this.tension, 2) * 0.016, now, 0.3); }
+    // (both stay all but silent in the quiet stretches, and climb fast once something is wrong)
+    if (this.loops.drone) { this.loops.drone.gain.setTargetAtTime(0.004 + this.tension * this.tension * 0.14, now, 0.3); this.loops.hi.gain.setTargetAtTime(Math.pow(this.tension, 3) * 0.014, now, 0.3); }
     this.updateMusicBox();
     // shepard riser
     if (this.riser) {
@@ -939,12 +987,25 @@ const A = {
         x.og.gain.setTargetAtTime(Math.pow(Math.sin(Math.PI * pos), 2) * 0.5, now, 0.05);
       });
     }
-    // phone bell: 2 s ring, 4 s silence
+    // phone bell: 2 s ring, 4 s silence (a wrong ring hurries, and its last rings run together)
     if (this.ring && now >= this.ring.next) {
-      this.ring.h = [this.play('bell', { pos: this.ring.pos, gain: 0.55, reverb: 0.3, ref: 1.2 })];
-      this.ring.next = now + 6;
+      const r = this.ring, w = Math.min(1, r.wrong + r.n * r.grow);
+      r.h = this.ringBurst(r.pos, w, w > 0.85 ? 3 : 2);
+      r.n++; r.next = now + lerp(6, 3.4, w);
     }
     if (G.state !== 'play') return;
+    const her = typeof Stalker !== 'undefined' && Stalker.group.visible ? Stalker.distTo(P.pos) : 99;
+    // the fridge cycles; when she is close, everything electric stops
+    if (this.loops.fridge) {
+      const fr = this.loops.fridge;
+      if (this.fridgeOn && her < 10) { this.fridgeOn = false; fr.setGain(0, 0.08); this.nextFridge = rand(25, 45); this.play('clack', { pos: this.anchors.fridge, gain: 0.1, muffle: 900, rate: 0.55, reverb: 0.3 }); }
+      else if ((this.nextFridge -= dt) <= 0) {
+        if (this.fridgeOn) { this.fridgeOn = false; fr.setGain(0, 0.25); this.nextFridge = rand(25, 55); this.play('clack', { pos: this.anchors.fridge, gain: 0.1, muffle: 900, rate: 0.55, reverb: 0.3 }); }
+        else if (her > 12) { this.fridgeOn = true; fr.setGain(0.35, 1.2); this.nextFridge = rand(50, 110); this.play('thump', { pos: this.anchors.fridge, gain: 0.08, reverb: 0.2 }); }
+        else this.nextFridge = 5;
+      }
+    }
+    if ((this.rainLevel ?? 1) > 0.3 && (this.nextGust -= dt) <= 0) { this.nextGust = rand(30, 70); this.gust(); }
     const fear = this.fear = P.fear;
     // heartbeat: only when it's really bad
     if (fear > 0.32 && now >= this.nextBeat) {
@@ -952,22 +1013,22 @@ const A = {
       this.play('heart', { gain: Math.min(1, (fear - 0.32) * 1.5) * 0.6, bus: 'sfx', reverb: 0 });
       this.nextBeat = now + 60 / bpm;
     }
-    // breathing (player): barely there until you're scared or out of breath
+    // breathing (player): silent while calm (a steady breath is just more hiss), loud when scared or out of breath
     if (!P.holdingBreath && !this.breathSuppressed && now >= this.nextBreath) {
       const scared = fear > 0.45 || P.stamina < 0.4;
       const name = this.breathIn ? (scared ? 'inShaky' : 'in') : (scared ? 'outShaky' : 'out');
-      const g = (0.018 + fear * 0.12 + (1 - P.stamina) * 0.12) * (P.eyesClosed > 0.8 ? 1.3 : 1);
+      const g = (0.003 + Math.max(0, fear - 0.12) * 0.15 + (1 - P.stamina) * 0.11) * (P.eyesClosed > 0.8 ? 1.3 : 1);
       this.play(name, { gain: g, bus: 'sfx', reverb: 0.05, rate: 1 + fear * 0.25 });
       const len = this.buf[name].duration / (1 + fear * 0.25);
       this.nextBreath = now + len + (this.breathIn ? 0.15 : rand(0.6, 1.6) * (1 - fear * 0.7));
       this.breathIn = !this.breathIn;
     }
     const a = this.anchors;
-    // clock ticking near the hall clock
+    // clock ticking near the hall clock. It stops when the house goes quiet, and while she is near
     if (a.clock && now >= this.nextTick) {
       this.nextTick = Math.ceil(now + 0.001);
       const d = _v1.copy(a.clock).distanceTo(P.headPos);
-      if (d < 7) this.play(this.tickHi ? 'tick' : 'tock', { pos: a.clock, gain: 0.16, reverb: 0.15, when: this.nextTick - now, ref: 0.6 });
+      if (d < 7 && now > (this.hushUntil || 0) && her > 10) this.play(this.tickHi ? 'tick' : 'tock', { pos: a.clock, gain: 0.13, reverb: 0.15, when: this.nextTick - now, ref: 0.6 });
       this.tickHi = !this.tickHi;
     }
     // bathroom faucet drip

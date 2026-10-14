@@ -42,8 +42,8 @@ Progress is saved per hour; "continue" on the title screen picks up where you di
 | Hour | Your task | What happens | Rule |
 |------|-----------|--------------|------|
 | 3:00 | find your flashlight, read the note | Mom calls. | — |
-| 3:09 | find the matches, light three candles | The phone rings again. The answering machine picks up. | 6 |
-| 3:17 | check the three window locks | Knocking. Her voice through the door, the peephole. Something at the kitchen window. | 1, 2 |
+| 3:09 | find the matches, light three candles | The phone rings again, and every ring is a little more wrong. The answering machine picks up. | 6 |
+| 3:17 | check the three window locks | Knocking. Her voice through the door, the peephole. When that fails, a baby starts crying in the corridor (there is no baby on your floor). Something at the kitchen window. | 1, 2 |
 | 3:33 | close the music box | The bathtub. The mirror. | 5 |
 | 3:51 | — | She is in the hall, and every candle goes out. | 3 |
 | 4:05 | get the spare key, lock Mom's door | Her door opens by itself. Someone in her bed is calling you. | 7 |
@@ -53,8 +53,13 @@ Progress is saved per hour; "continue" on the title screen picks up where you di
 | 5:13 | get a glass of water | Knocking from inside Mom's room. She runs. Your room. The door. | 10 |
 | 5:52 | open the curtains | Dawn. Two people come to the front door. | 1, 2 |
 
-The house is quiet on purpose: the rain and the drone sit low, and they drop out completely for a
-second or two before something happens.
+The house is quiet on purpose. The rain is a dark murmur through the walls (you hear it properly
+only at a window), the fridge hums in the kitchen, the hall clock ticks, and that's it. Right before
+something happens everything drops out, and the clock and the fridge stop whenever she is near.
+Between the scripted scares the flat is never quite empty: footsteps in the flat upstairs (nobody
+lives upstairs), a dog down the street that suddenly stops, one strike of the phone bell, knocks
+inside the wall beside you, your name from an empty room, breathing behind you in the dark. More
+of them as the night goes on.
 
 ## How it is made
 
@@ -66,12 +71,15 @@ second or two before something happens.
   door at arm's length never blow out to white.
 - Canvas-painted textures: wallpaper, floorboards, tiles, photographs, crayon drawings, the paper mask
   (and what is under it), blood.
-- Voices: 69 recorded lines and effects made with ElevenLabs (Mom: "Mother – Strong, Warm, Calm";
-  the thing pretending to be her: Mom's voice bent with ring modulation and an octave-down shadow;
-  what is under the face: "The Ancient Evil", layered with a pitched-down double and reversed
-  reverb swells). Shouted lines play both voices at once.
-- Web Audio: HRTF spatial sound, convolution reverb, a mix that keeps the rain under the steps and
-  voices, plus synthesized rain, thunder, creaks, a rotary phone bell, a warped music box (Brahms'
+- Voices and recorded sound: 76 clips made with ElevenLabs. Mom is "Mother – Strong, Warm, Calm";
+  the thing pretending to be her is Mom's voice bent with ring modulation and an octave-down shadow;
+  what is under the face is "The Ancient Evil", layered with a pitched-down double and reversed
+  reverb swells. Shouted lines play both voices at once. The effects include a real landline bell
+  (slowed, lowered and shadowed an octave down when the call is the wrong one), rain and a fridge
+  hum as seamless loops, far thunder, the crying in the corridor, footsteps through the ceiling.
+- Web Audio: HRTF spatial sound, convolution reverb, a mix measured in place (the bed of the night
+  sits around −48 dBFS with almost nothing above 2 kHz, so there is no static hiss; voices and
+  scares land 30+ dB above it), plus synthesized creaks, knocks, a warped music box (Brahms'
   lullaby), breathing and heartbeat.
 
 ## Source and build
