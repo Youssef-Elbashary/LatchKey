@@ -1,0 +1,10 @@
+# Vercel rebuilds the page from src/ and assets/audio/proc/ (vercel.json), so skip
+# the built copies, the unprocessed voice takes and local tooling
+.claude
+.impeccable
+build
+dist
+artifact.html
+index.html
+assets/audio/*.mp3
+docs
