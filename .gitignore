@@ -1,0 +1,10 @@
+# build output (node build.js); index.html stays committed so the repo plays after a clone
+build/
+dist/
+artifact.html
+
+# local tooling
+.claude/
+.impeccable/
+.vercel/
+node_modules/
